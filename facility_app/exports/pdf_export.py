@@ -6,6 +6,7 @@ hyperlink.
 """
 
 import io
+from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib import colors
@@ -15,7 +16,10 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-LOGO_PATH = "assets/infinite_medelite_logo.png"
+# Anchor to this module's location, not the process's CWD - Streamlit Cloud
+# doesn't guarantee CWD == the repo/app folder.
+BASE_DIR = Path(__file__).resolve().parent.parent
+LOGO_PATH = BASE_DIR / "assets" / "infinite_medelite_logo.png"
 
 
 def medicare_url(ccn: str, state: str) -> str:
@@ -62,7 +66,7 @@ def build_snapshot_pdf(snapshot: dict, ccn: str) -> bytes:
 
     # Static brand banner - logo image, never replaced by facility name
     try:
-        elements.append(Image(LOGO_PATH, width=2.6 * inch, height=0.58 * inch))
+        elements.append(Image(str(LOGO_PATH), width=2.6 * inch, height=0.58 * inch))
     except Exception:
         # Fail gracefully if the logo asset is missing - text fallback,
         # but still never substitute the facility name here.
