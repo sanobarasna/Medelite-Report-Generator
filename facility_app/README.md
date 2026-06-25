@@ -2,7 +2,7 @@
 
 A Streamlit app for Medelite that looks up a nursing home by CMS Certification
 Number (CCN), pulls live public CMS data, layers on manual operational inputs,
-and generates a branded PDF/DOCX report — with results persisted to Supabase.
+and generates a branded PDF/DOCX report.
 
 **Test case:** CCN `686123` → Kendall Lakes Healthcare and Rehab Center, FL
 (matches the sample `Facility Assessment Snapshot` PDF used as the validation
@@ -12,21 +12,11 @@ target for this project).
 
 ```bash
 pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-# edit .streamlit/secrets.toml with your Supabase URL + key
-```
-
-Run the Supabase schema once, in your project's SQL editor:
-
-```bash
-# paste the contents of schema.sql into the Supabase SQL editor and run it
-```
-
-Then run the app:
-
-```bash
 streamlit run app.py
 ```
+
+No external services or secrets are required to run the app — CMS's
+Provider Data Catalog API is public and keyless.
 
 ## Project structure
 
@@ -35,15 +25,28 @@ app.py                     - main Streamlit entry point / UI
 data/
   cms_api.py                - CMS Provider Data Catalog API client
   mapping.py                 - field mapping, STR/LT relabeling, footnotes
-  persistence.py             - Supabase read/write (upsert + history)
+  persistence.py             - Supabase read/write helpers (UNUSED — see note below)
 exports/
   pdf_export.py               - PDF generation (reportlab)
   docx_export.py              - DOCX generation (fills the approved template)
 assets/
   infinite_medelite_logo.png   - extracted brand banner (static, never edited)
   snapshot_template.docx        - approved Word template, filled at export time
-schema.sql                  - Supabase table + trigger definitions
+schema.sql                  - Supabase table + trigger definitions (UNUSED — see note below)
 ```
+
+> **Note on `persistence.py` / `schema.sql`:** the app originally persisted
+> every lookup to Supabase (one row per CCN, with automatic version history
+> via a DB trigger) and offered a sidebar to reopen past reports. This
+> feature was removed from `app.py` after the connected Supabase project
+> hit its free-tier egress quota and started rejecting requests, breaking
+> the "Past Lookups" sidebar in production. The Supabase client code and
+> SQL schema are left in the repo, unreferenced, in case persistence is
+> reinstated later (e.g. on a paid Supabase plan, or a different backend).
+> To re-enable: re-wire `data/persistence.py`'s `save_assessment` /
+> `list_assessments` / `get_assessment` back into `app.py`, restore a
+> `.streamlit/secrets.toml` with valid Supabase credentials, and re-run
+> `schema.sql` against an active project.
 
 ## Architecture notes
 
@@ -75,10 +78,10 @@ schema.sql                  - Supabase table + trigger definitions
   (required); the DOCX includes the same URL as plain text (python-docx
   hyperlinks require extra XML relationship work not worth it for a
   "bonus" export format).
-- **Persistence**: one row per CCN in `facility_assessments`, upserted on
-  every fetch. A Postgres trigger automatically archives the prior version
-  into `facility_assessments_history` on every update, so nothing is lost
-  even though the main table only shows the latest state per facility.
+- **Persistence**: none currently. Each session is stateless — lookups,
+  manual inputs, and generated files exist only for the current browser
+  session and are not saved anywhere. See the note above if you want to
+  reinstate Supabase persistence.
 
 ## Known assumptions / engineering notes
 
@@ -93,9 +96,9 @@ perfection"), the following are documented here:
    against third-party CMS API documentation but not all individually
    verified against a live response at build time. If a field renders as
    blank/"N/A" after a real fetch, the most likely cause is a column-name
-   mismatch — check the `raw_api_snapshot` JSONB column in Supabase (or
-   add a quick `st.write(provider_info["raw"])` in `app.py`) to see the
-   actual keys CMS returns, and adjust `data/cms_api.py` accordingly.
+   mismatch — add a quick `st.write(provider_info["raw"])` in `app.py`
+   (right after a successful fetch) to inspect the actual keys CMS returns,
+   and adjust `data/cms_api.py` accordingly.
 2. **State US Averages claims-metric columns**: the State/US Averages file
    does not mirror the claims file's column names — it uses its own labels
    ("Number of hospitalizations per 1000 long-stay resident days", etc.).
@@ -111,4 +114,5 @@ perfection"), the following are documented here:
 - ✅ DOCX export
 - ✅ On-screen charts (bar charts comparing facility vs. state vs. national)
 - ✅ Error handling for invalid CCNs, missing fields, and partial API outages
-- ✅ Supabase persistence with full audit history via DB trigger
+- ⛔ Supabase persistence — built, then removed after a Supabase quota
+  outage broke it in production; code retained but unwired (see note above)
