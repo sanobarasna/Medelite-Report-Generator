@@ -10,9 +10,13 @@ placeholder strings (more robust to minor placeholder wording changes).
 """
 
 import io
+from pathlib import Path
 from docx import Document
 
-TEMPLATE_PATH = "assets/snapshot_template.docx"
+# Anchor to this module's location, not the process's CWD - Streamlit Cloud
+# doesn't guarantee CWD == the repo/app folder.
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMPLATE_PATH = BASE_DIR / "assets" / "snapshot_template.docx"
 
 
 def _set_cell_text(cell, text: str):
