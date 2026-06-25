@@ -8,12 +8,18 @@ Test case: CCN 686123 -> Kendall Lakes Healthcare and Rehab Center, FL
 """
 
 import streamlit as st
+from pathlib import Path
 
 from data.cms_api import fetch_provider_info, fetch_claims_metrics, fetch_state_national_averages
 from data.mapping import build_snapshot_fields
 from data.persistence import save_assessment, list_assessments, get_assessment
 from exports.pdf_export import build_snapshot_pdf, medicare_url
 from exports.docx_export import build_snapshot_docx
+
+# Anchor all asset paths to this file's location, not the process's CWD -
+# Streamlit Cloud doesn't guarantee CWD == the repo/app folder.
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "assets" / "infinite_medelite_logo.png"
 
 st.set_page_config(page_title="Facility Assessment Snapshot", page_icon="🏥", layout="wide")
 
@@ -25,7 +31,7 @@ st.set_page_config(page_title="Facility Assessment Snapshot", page_icon="🏥", 
 def render_brand_header(state: str = ""):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("assets/infinite_medelite_logo.png", width=320)
+        st.image(str(LOGO_PATH), width=320)
         st.markdown(
             "<h3 style='text-align:center; margin-bottom:0;'>FACILITY ASSESSMENT SNAPSHOT</h3>",
             unsafe_allow_html=True,
