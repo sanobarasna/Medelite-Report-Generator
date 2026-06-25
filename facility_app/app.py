@@ -2,7 +2,7 @@
 Medelite Facility Assessment Snapshot Generator
 -------------------------------------------------
 Enter a CCN -> pull CMS public nursing-home data live -> layer on manual
-operational inputs -> preview -> download PDF/DOCX -> persist to Supabase.
+operational inputs -> preview -> download PDF/DOCX.
 
 Test case: CCN 686123 -> Kendall Lakes Healthcare and Rehab Center, FL
 """
@@ -12,7 +12,6 @@ from pathlib import Path
 
 from data.cms_api import fetch_provider_info, fetch_claims_metrics, fetch_state_national_averages
 from data.mapping import build_snapshot_fields
-from data.persistence import save_assessment, list_assessments, get_assessment
 from exports.pdf_export import build_snapshot_pdf, medicare_url
 from exports.docx_export import build_snapshot_docx
 
@@ -60,29 +59,6 @@ if "fetch_error" not in st.session_state:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar: history / reopen past reports
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.header("📁 Past Lookups")
-    st.caption("Reopen a previously generated assessment.")
-    try:
-        history = list_assessments(limit=25)
-    except Exception:
-        history = []
-        st.info("Connect Supabase secrets to enable history.")
-
-    if history:
-        for record in history:
-            label = f"{record.get('facility_name_display') or record['ccn']} ({record['ccn']})"
-            if st.button(label, key=f"hist_{record['ccn']}", use_container_width=True):
-                st.session_state.reopen_ccn = record["ccn"]
-                st.rerun()
-    elif history == []:
-        st.caption("No saved assessments yet.")
-
-
-# ---------------------------------------------------------------------------
 # Main: CCN lookup
 # ---------------------------------------------------------------------------
 
@@ -90,13 +66,11 @@ render_brand_header(st.session_state.provider_info.get("state") if st.session_st
 
 st.divider()
 
-reopen_ccn = st.session_state.pop("reopen_ccn", None)
-
 col_a, col_b = st.columns([3, 1])
 with col_a:
     ccn_input = st.text_input(
         "CMS Certification Number (CCN)",
-        value=reopen_ccn or st.session_state.last_ccn,
+        value=st.session_state.last_ccn,
         placeholder="e.g. 686123",
         max_chars=10,
     )
@@ -138,35 +112,6 @@ if fetch_clicked and ccn_input.strip():
                 f"Couldn't reach the CMS data API: {e}. Please try again in a moment."
             )
 
-elif reopen_ccn:
-    # Reopening a saved record: load from Supabase instead of re-fetching
-    saved = get_assessment(reopen_ccn)
-    if saved:
-        st.session_state.last_ccn = reopen_ccn
-        st.session_state.provider_info = {
-            "ccn": saved["ccn"],
-            "provider_name": saved.get("facility_name_api"),
-            "state": saved.get("state"),
-            "location": saved.get("location"),
-            "census_capacity": saved.get("census_capacity"),
-            "overall_rating": saved.get("overall_rating"),
-            "health_inspection_rating": saved.get("health_inspection_rating"),
-            "staffing_rating": saved.get("staffing_rating"),
-            "quality_rating": saved.get("quality_rating"),
-        }
-        metrics_blob = saved.get("metrics") or {}
-        st.session_state.claims_metrics = metrics_blob.get("claims", {})
-        st.session_state.state_national_averages = metrics_blob.get("averages", {})
-        st.session_state._reopened_manual = {
-            "emr": saved.get("emr"),
-            "current_census": saved.get("current_census"),
-            "type_of_patient": saved.get("type_of_patient"),
-            "previous_coverage": saved.get("previous_coverage"),
-            "previous_provider_performance": saved.get("previous_provider_performance"),
-            "medical_coverage": saved.get("medical_coverage"),
-        }
-        st.session_state._reopened_override = saved.get("facility_name_override") or ""
-
 if st.session_state.fetch_error:
     st.error(st.session_state.fetch_error)
 
@@ -178,8 +123,6 @@ if st.session_state.fetch_error:
 if st.session_state.provider_info:
     provider_info = st.session_state.provider_info
     ccn = provider_info["ccn"]
-    reopened_manual = st.session_state.pop("_reopened_manual", {})
-    reopened_override = st.session_state.pop("_reopened_override", "")
 
     st.success(
         f"Loaded: **{provider_info.get('provider_name', 'Unknown')}** "
@@ -189,38 +132,27 @@ if st.session_state.provider_info:
     st.subheader("Facility Name")
     name_override = st.text_input(
         "Optional name override (replaces only the 'Name of Facility' row — never the INFINITE banner)",
-        value=reopened_override,
+        value="",
         placeholder=provider_info.get("provider_name") or "",
     )
 
     st.subheader("Manual Operational Inputs")
     m1, m2, m3 = st.columns(3)
     with m1:
-        emr = st.text_input("EMR", value=reopened_manual.get("emr") or "", placeholder="e.g. PCC, MatrixCare")
-        current_census = st.number_input(
-            "Current Census",
-            min_value=0,
-            value=int(reopened_manual.get("current_census") or 0),
-            step=1,
-        )
+        emr = st.text_input("EMR", value="", placeholder="e.g. PCC, MatrixCare")
+        current_census = st.number_input("Current Census", min_value=0, value=0, step=1)
     with m2:
         type_of_patient = st.text_input(
-            "Type of Patient", value=reopened_manual.get("type_of_patient") or "",
-            placeholder="e.g. Long-term & Short-term",
+            "Type of Patient", value="", placeholder="e.g. Long-term & Short-term",
         )
-        previous_coverage = st.selectbox(
-            "Previous Coverage from Medelite", options=["Yes", "No"],
-            index=0 if (reopened_manual.get("previous_coverage") or "Yes") == "Yes" else 1,
-        )
+        previous_coverage = st.selectbox("Previous Coverage from Medelite", options=["Yes", "No"])
     with m3:
         previous_provider_performance = st.text_input(
             "Previous Provider Performance from Medelite",
-            value=reopened_manual.get("previous_provider_performance") or "",
-            placeholder="e.g. About 30 patients/day",
+            value="", placeholder="e.g. About 30 patients/day",
         )
         medical_coverage = st.text_input(
-            "Medical Coverage", value=reopened_manual.get("medical_coverage") or "",
-            placeholder="e.g. Optometry, PCP, Podiatry",
+            "Medical Coverage", value="", placeholder="e.g. Optometry, PCP, Podiatry",
         )
 
     manual_inputs = {
@@ -283,7 +215,7 @@ if st.session_state.provider_info:
     # ----- Exports -----
     st.divider()
     st.subheader("⬇️ Export")
-    e1, e2, e3 = st.columns(3)
+    e1, e2 = st.columns(2)
 
     with e1:
         try:
@@ -310,34 +242,6 @@ if st.session_state.provider_info:
             )
         except Exception as e:
             st.error(f"DOCX generation failed: {e}")
-
-    with e3:
-        if st.button("💾 Save to History", use_container_width=True):
-            record = {
-                "ccn": ccn,
-                "state": snapshot.get("state"),
-                "facility_name_api": snapshot.get("facility_name_api"),
-                "facility_name_override": snapshot.get("facility_name_override"),
-                "facility_name_display": snapshot.get("facility_name_display"),
-                "location": provider_info.get("location"),
-                "census_capacity": provider_info.get("census_capacity"),
-                "overall_rating": provider_info.get("overall_rating"),
-                "health_inspection_rating": provider_info.get("health_inspection_rating"),
-                "staffing_rating": provider_info.get("staffing_rating"),
-                "quality_rating": provider_info.get("quality_rating"),
-                "emr": manual_inputs["emr"],
-                "current_census": manual_inputs["current_census"],
-                "type_of_patient": manual_inputs["type_of_patient"],
-                "previous_coverage": manual_inputs["previous_coverage"],
-                "previous_provider_performance": manual_inputs["previous_provider_performance"],
-                "medical_coverage": manual_inputs["medical_coverage"],
-                "metrics": {"claims": claims, "averages": averages},
-                "raw_api_snapshot": provider_info.get("raw", {}),
-            }
-            saved = save_assessment(record)
-            if saved:
-                st.success("Saved! This facility now appears in Past Lookups.")
-                st.rerun()
 
 else:
     st.info("Enter a CCN above and click **Fetch Facility Data** to get started. Try `686123` (Kendall Lakes, FL) as a test case.")
